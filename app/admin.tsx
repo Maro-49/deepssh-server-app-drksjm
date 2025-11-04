@@ -1,5 +1,4 @@
 
-import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,10 +8,10 @@ import {
   ScrollView,
   Alert,
   Modal,
+  ActivityIndicator,
 } from 'react-native';
-import { useRouter, Stack } from 'expo-router';
+import React, { useState, useEffect } from 'react';
 import { colors } from '@/styles/commonStyles';
-import { IconSymbol } from '@/components/IconSymbol';
 import {
   getServers,
   getAppSettings,
@@ -22,7 +21,9 @@ import {
   updateServer,
   subscribeToDataChanges,
 } from '@/data/serversData';
-import { Server } from '@/types/server';
+import { Server, AppSettings } from '@/types/server';
+import { useRouter, Stack } from 'expo-router';
+import { IconSymbol } from '@/components/IconSymbol';
 
 const ADMIN_USERNAME = 'maro@@#2008';
 const ADMIN_PASSWORD = 'maro@@#2008';
@@ -32,99 +33,130 @@ export default function AdminScreen() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [servers, setServers] = useState(getServers());
-  const [welcomeMessage, setWelcomeMessage] = useState(getAppSettings().welcomeMessage);
-  const [updateNumber, setUpdateNumber] = useState(getAppSettings().updateNumber);
-  const [showAddModal, setShowAddModal] = useState(false);
+  const [servers, setServers] = useState<Server[]>([]);
+  const [settings, setSettings] = useState<AppSettings>({ welcomeMessage: '', updateNumber: '' });
   const [editingServer, setEditingServer] = useState<Server | null>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
-  const [newServer, setNewServer] = useState<Partial<Server>>({
-    type: 'v2ray',
-    username: '',
-    host: '',
-    password: '',
-    port: '',
-    isOnline: true,
-    customConfig: '',
-  });
+  // Form states for new/edit server
+  const [formType, setFormType] = useState<'v2ray' | 'websocket' | 'udp'>('v2ray');
+  const [formUsername, setFormUsername] = useState('');
+  const [formHost, setFormHost] = useState('');
+  const [formPassword, setFormPassword] = useState('');
+  const [formPort, setFormPort] = useState('');
+  const [formIsOnline, setFormIsOnline] = useState(true);
+  const [formCustomConfig, setFormCustomConfig] = useState('');
 
   useEffect(() => {
-    // Subscribe to data changes
-    const unsubscribe = subscribeToDataChanges(() => {
-      console.log('Data changed, updating admin screen');
-      setServers(getServers());
-      const settings = getAppSettings();
-      setWelcomeMessage(settings.welcomeMessage);
-      setUpdateNumber(settings.updateNumber);
-    });
+    if (isAuthenticated) {
+      loadData();
 
-    return () => {
-      unsubscribe();
-    };
-  }, []);
+      // Subscribe to data changes
+      const unsubscribe = subscribeToDataChanges(() => {
+        console.log('Data changed in admin, reloading...');
+        loadData();
+      });
+
+      return unsubscribe;
+    }
+  }, [isAuthenticated]);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const loadedServers = await getServers();
+      const loadedSettings = await getAppSettings();
+      setServers(loadedServers);
+      setSettings(loadedSettings);
+      console.log('Admin data loaded successfully');
+    } catch (error) {
+      console.error('Error loading admin data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleLogin = () => {
     if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
       setIsAuthenticated(true);
-      Alert.alert('✅ Success', 'Welcome to Admin Panel!');
+      Alert.alert('Success', 'Welcome to Admin Panel');
     } else {
-      Alert.alert('❌ Error', 'Invalid username or password');
+      Alert.alert('Error', 'Invalid username or password');
     }
   };
 
-  const handleSaveSettings = () => {
-    console.log('Saving settings:', { welcomeMessage, updateNumber });
-    updateAppSettings({
-      welcomeMessage,
-      updateNumber,
-    });
-    Alert.alert('✅ Saved', 'Settings updated successfully!');
+  const handleSaveSettings = async () => {
+    try {
+      setSaving(true);
+      await updateAppSettings(settings);
+      Alert.alert('Success', 'Settings and servers updated successfully! Changes are now persistent.');
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      Alert.alert('Error', 'Failed to save settings');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleAddServer = () => {
-    if (!newServer.username || !newServer.host || !newServer.password) {
-      Alert.alert('⚠️ Error', 'Please fill in all required fields');
+  const handleAddServer = async () => {
+    if (!formUsername || !formHost || !formPassword) {
+      Alert.alert('Error', 'Please fill in all required fields');
       return;
     }
 
-    const server: Server = {
+    const newServer: Server = {
       id: Date.now().toString(),
-      type: newServer.type as 'v2ray' | 'websocket' | 'udp',
-      username: newServer.username,
-      host: newServer.host,
-      password: newServer.password,
-      port: newServer.port || '',
-      isOnline: newServer.isOnline ?? true,
-      customConfig: newServer.customConfig || '',
+      type: formType,
+      username: formUsername,
+      host: formHost,
+      password: formPassword,
+      port: formPort,
+      isOnline: formIsOnline,
+      customConfig: formCustomConfig,
       createdAt: new Date().toISOString(),
     };
 
-    addServer(server);
-    setShowAddModal(false);
-    setNewServer({
-      type: 'v2ray',
-      username: '',
-      host: '',
-      password: '',
-      port: '',
-      isOnline: true,
-      customConfig: '',
-    });
-    Alert.alert('✅ Success', 'Server added successfully!');
+    try {
+      setSaving(true);
+      await addServer(newServer);
+      Alert.alert('Success', 'Server added successfully!');
+      // Reset form
+      setFormUsername('');
+      setFormHost('');
+      setFormPassword('');
+      setFormPort('');
+      setFormCustomConfig('');
+      setFormIsOnline(true);
+    } catch (error) {
+      console.error('Error adding server:', error);
+      Alert.alert('Error', 'Failed to add server');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleDeleteServer = (id: string) => {
+  const handleDeleteServer = async (id: string) => {
     Alert.alert(
-      '⚠️ Confirm Delete',
+      'Confirm Delete',
       'Are you sure you want to delete this server?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete',
           style: 'destructive',
-          onPress: () => {
-            deleteServer(id);
-            Alert.alert('✅ Deleted', 'Server deleted successfully!');
+          onPress: async () => {
+            try {
+              setSaving(true);
+              await deleteServer(id);
+              Alert.alert('Success', 'Server deleted successfully!');
+            } catch (error) {
+              console.error('Error deleting server:', error);
+              Alert.alert('Error', 'Failed to delete server');
+            } finally {
+              setSaving(false);
+            }
           },
         },
       ]
@@ -133,29 +165,51 @@ export default function AdminScreen() {
 
   const handleEditServer = (server: Server) => {
     setEditingServer(server);
-    setNewServer(server);
-    setShowAddModal(true);
+    setFormType(server.type);
+    setFormUsername(server.username);
+    setFormHost(server.host);
+    setFormPassword(server.password);
+    setFormPort(server.port || '');
+    setFormIsOnline(server.isOnline);
+    setFormCustomConfig(server.customConfig || '');
+    setShowEditModal(true);
   };
 
-  const handleUpdateServer = () => {
-    if (!editingServer || !newServer.username || !newServer.host || !newServer.password) {
-      Alert.alert('⚠️ Error', 'Please fill in all required fields');
+  const handleUpdateServer = async () => {
+    if (!editingServer) return;
+
+    if (!formUsername || !formHost || !formPassword) {
+      Alert.alert('Error', 'Please fill in all required fields');
       return;
     }
 
-    updateServer(editingServer.id, newServer);
-    setShowAddModal(false);
-    setEditingServer(null);
-    setNewServer({
-      type: 'v2ray',
-      username: '',
-      host: '',
-      password: '',
-      port: '',
-      isOnline: true,
-      customConfig: '',
-    });
-    Alert.alert('✅ Updated', 'Server updated successfully!');
+    try {
+      setSaving(true);
+      await updateServer(editingServer.id, {
+        type: formType,
+        username: formUsername,
+        host: formHost,
+        password: formPassword,
+        port: formPort,
+        isOnline: formIsOnline,
+        customConfig: formCustomConfig,
+      });
+      Alert.alert('Success', 'Server updated successfully!');
+      setShowEditModal(false);
+      setEditingServer(null);
+      // Reset form
+      setFormUsername('');
+      setFormHost('');
+      setFormPassword('');
+      setFormPort('');
+      setFormCustomConfig('');
+      setFormIsOnline(true);
+    } catch (error) {
+      console.error('Error updating server:', error);
+      Alert.alert('Error', 'Failed to update server');
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (!isAuthenticated) {
@@ -163,24 +217,13 @@ export default function AdminScreen() {
       <View style={styles.container}>
         <Stack.Screen
           options={{
-            headerShown: true,
             title: 'Admin Login',
-            headerStyle: {
-              backgroundColor: colors.card,
-            },
+            headerStyle: { backgroundColor: colors.background },
             headerTintColor: colors.text,
-            headerLeft: () => (
-              <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                <IconSymbol name="chevron.left" size={24} color={colors.primary} />
-              </TouchableOpacity>
-            ),
           }}
         />
         <View style={styles.loginContainer}>
-          <IconSymbol name="lock.shield" size={64} color={colors.primary} />
-          <Text style={styles.loginTitle}>Admin Access</Text>
-          <Text style={styles.loginSubtitle}>Enter your credentials to continue</Text>
-
+          <Text style={styles.title}>Admin Panel</Text>
           <TextInput
             style={styles.input}
             placeholder="Username"
@@ -189,7 +232,6 @@ export default function AdminScreen() {
             onChangeText={setUsername}
             autoCapitalize="none"
           />
-
           <TextInput
             style={styles.input}
             placeholder="Password"
@@ -199,10 +241,27 @@ export default function AdminScreen() {
             secureTextEntry
             autoCapitalize="none"
           />
-
           <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
             <Text style={styles.loginButtonText}>Login</Text>
           </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <Stack.Screen
+          options={{
+            title: 'Admin Panel',
+            headerStyle: { backgroundColor: colors.background },
+            headerTintColor: colors.text,
+          }}
+        />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>Loading admin data...</Text>
         </View>
       </View>
     );
@@ -212,135 +271,235 @@ export default function AdminScreen() {
     <View style={styles.container}>
       <Stack.Screen
         options={{
-          headerShown: true,
           title: 'Admin Panel',
-          headerStyle: {
-            backgroundColor: colors.card,
-          },
+          headerStyle: { backgroundColor: colors.background },
           headerTintColor: colors.text,
-          headerLeft: () => (
-            <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-              <IconSymbol name="chevron.left" size={24} color={colors.primary} />
-            </TouchableOpacity>
-          ),
         }}
       />
-
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        {/* App Settings */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>App Settings</Text>
-          
           <Text style={styles.label}>Welcome Message</Text>
           <TextInput
             style={[styles.input, styles.textArea]}
-            placeholder="Enter welcome message..."
+            placeholder="Enter welcome message"
             placeholderTextColor={colors.textSecondary}
-            value={welcomeMessage}
-            onChangeText={setWelcomeMessage}
+            value={settings.welcomeMessage}
+            onChangeText={(text) => setSettings({ ...settings, welcomeMessage: text })}
             multiline
             numberOfLines={3}
           />
-
           <Text style={styles.label}>Update Number</Text>
           <TextInput
             style={styles.input}
             placeholder="e.g., v1.0.0"
             placeholderTextColor={colors.textSecondary}
-            value={updateNumber}
-            onChangeText={setUpdateNumber}
+            value={settings.updateNumber}
+            onChangeText={(text) => setSettings({ ...settings, updateNumber: text })}
           />
-
-          <TouchableOpacity style={styles.saveButton} onPress={handleSaveSettings}>
-            <IconSymbol name="checkmark.circle" size={20} color={colors.text} />
-            <Text style={styles.saveButtonText}>Update Settings and Servers</Text>
+          <TouchableOpacity 
+            style={[styles.saveButton, saving && styles.disabledButton]} 
+            onPress={handleSaveSettings}
+            disabled={saving}
+          >
+            {saving ? (
+              <ActivityIndicator size="small" color={colors.background} />
+            ) : (
+              <Text style={styles.saveButtonText}>Update Settings and Servers</Text>
+            )}
           </TouchableOpacity>
         </View>
 
+        {/* Add New Server */}
         <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Manage Servers</Text>
+          <Text style={styles.sectionTitle}>Add New Server</Text>
+          
+          <Text style={styles.label}>Server Type</Text>
+          <View style={styles.typeSelector}>
             <TouchableOpacity
-              style={styles.addButton}
-              onPress={() => {
-                setEditingServer(null);
-                setNewServer({
-                  type: 'v2ray',
-                  username: '',
-                  host: '',
-                  password: '',
-                  port: '',
-                  isOnline: true,
-                  customConfig: '',
-                });
-                setShowAddModal(true);
-              }}
+              style={[styles.typeButton, formType === 'v2ray' && styles.activeTypeButton]}
+              onPress={() => setFormType('v2ray')}
             >
-              <IconSymbol name="plus.circle.fill" size={24} color={colors.secondary} />
+              <Text style={[styles.typeButtonText, formType === 'v2ray' && styles.activeTypeButtonText]}>
+                V2Ray
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.typeButton, formType === 'websocket' && styles.activeTypeButton]}
+              onPress={() => setFormType('websocket')}
+            >
+              <Text style={[styles.typeButtonText, formType === 'websocket' && styles.activeTypeButtonText]}>
+                WebSocket
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.typeButton, formType === 'udp' && styles.activeTypeButton]}
+              onPress={() => setFormType('udp')}
+            >
+              <Text style={[styles.typeButtonText, formType === 'udp' && styles.activeTypeButtonText]}>
+                UDP
+              </Text>
             </TouchableOpacity>
           </View>
 
-          {servers.map(server => (
-            <View key={server.id} style={styles.serverCard}>
-              <View style={styles.serverHeader}>
-                <Text style={styles.serverType}>{server.type.toUpperCase()}</Text>
-                <View style={styles.serverActions}>
-                  <TouchableOpacity onPress={() => handleEditServer(server)}>
-                    <IconSymbol name="pencil" size={20} color={colors.secondary} />
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => handleDeleteServer(server.id)}>
-                    <IconSymbol name="trash" size={20} color={colors.error} />
-                  </TouchableOpacity>
+          <Text style={styles.label}>Username *</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Enter username"
+            placeholderTextColor={colors.textSecondary}
+            value={formUsername}
+            onChangeText={setFormUsername}
+          />
+
+          <Text style={styles.label}>Host *</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Enter host"
+            placeholderTextColor={colors.textSecondary}
+            value={formHost}
+            onChangeText={setFormHost}
+          />
+
+          <Text style={styles.label}>Password *</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Enter password"
+            placeholderTextColor={colors.textSecondary}
+            value={formPassword}
+            onChangeText={setFormPassword}
+          />
+
+          <Text style={styles.label}>Port</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Enter port"
+            placeholderTextColor={colors.textSecondary}
+            value={formPort}
+            onChangeText={setFormPort}
+            keyboardType="numeric"
+          />
+
+          <Text style={styles.label}>Custom Config</Text>
+          <TextInput
+            style={[styles.input, styles.textArea]}
+            placeholder="Enter custom config (optional)"
+            placeholderTextColor={colors.textSecondary}
+            value={formCustomConfig}
+            onChangeText={setFormCustomConfig}
+            multiline
+            numberOfLines={3}
+          />
+
+          <View style={styles.statusContainer}>
+            <Text style={styles.label}>Server Status</Text>
+            <TouchableOpacity
+              style={styles.statusToggle}
+              onPress={() => setFormIsOnline(!formIsOnline)}
+            >
+              <View style={[styles.statusIndicator, formIsOnline && styles.statusIndicatorOnline]} />
+              <Text style={styles.statusText}>{formIsOnline ? 'Online' : 'Offline'}</Text>
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity 
+            style={[styles.addButton, saving && styles.disabledButton]} 
+            onPress={handleAddServer}
+            disabled={saving}
+          >
+            {saving ? (
+              <ActivityIndicator size="small" color={colors.background} />
+            ) : (
+              <>
+                <IconSymbol name="add" size={20} color={colors.background} />
+                <Text style={styles.addButtonText}>Add Server</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        {/* Server List */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Manage Servers ({servers.length})</Text>
+          {servers.map((server) => (
+            <View key={server.id} style={styles.serverItem}>
+              <View style={styles.serverInfo}>
+                <View style={styles.serverHeader}>
+                  <Text style={styles.serverType}>{server.type.toUpperCase()}</Text>
+                  <View style={[styles.statusBadge, server.isOnline && styles.statusBadgeOnline]}>
+                    <Text style={styles.statusBadgeText}>
+                      {server.isOnline ? 'Online' : 'Offline'}
+                    </Text>
+                  </View>
                 </View>
+                <Text style={styles.serverDetail}>Username: {server.username}</Text>
+                <Text style={styles.serverDetail}>Host: {server.host}</Text>
+                <Text style={styles.serverDetail}>Port: {server.port || 'N/A'}</Text>
               </View>
-              <Text style={styles.serverInfo}>Host: {server.host}</Text>
-              <Text style={styles.serverInfo}>User: {server.username}</Text>
-              <Text style={styles.serverInfo}>
-                Status: {server.isOnline ? '✅ Online' : '❌ Offline'}
-              </Text>
+              <View style={styles.serverActions}>
+                <TouchableOpacity
+                  style={styles.editButton}
+                  onPress={() => handleEditServer(server)}
+                  disabled={saving}
+                >
+                  <IconSymbol name="edit" size={20} color={colors.primary} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.deleteButton}
+                  onPress={() => handleDeleteServer(server.id)}
+                  disabled={saving}
+                >
+                  <IconSymbol name="delete" size={20} color={colors.accent} />
+                </TouchableOpacity>
+              </View>
             </View>
           ))}
         </View>
       </ScrollView>
 
+      {/* Edit Server Modal */}
       <Modal
-        visible={showAddModal}
+        visible={showEditModal}
         animationType="slide"
         transparent={true}
-        onRequestClose={() => setShowAddModal(false)}
+        onRequestClose={() => setShowEditModal(false)}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                {editingServer ? 'Edit Server' : 'Add New Server'}
-              </Text>
-              <TouchableOpacity onPress={() => setShowAddModal(false)}>
-                <IconSymbol name="xmark.circle.fill" size={28} color={colors.textSecondary} />
+              <Text style={styles.modalTitle}>Edit Server</Text>
+              <TouchableOpacity onPress={() => setShowEditModal(false)}>
+                <IconSymbol name="close" size={24} color={colors.text} />
               </TouchableOpacity>
             </View>
 
             <ScrollView style={styles.modalScroll}>
               <Text style={styles.label}>Server Type</Text>
               <View style={styles.typeSelector}>
-                {(['v2ray', 'websocket', 'udp'] as const).map(type => (
-                  <TouchableOpacity
-                    key={type}
-                    style={[
-                      styles.typeButton,
-                      newServer.type === type && styles.typeButtonActive,
-                    ]}
-                    onPress={() => setNewServer({ ...newServer, type })}
-                  >
-                    <Text
-                      style={[
-                        styles.typeButtonText,
-                        newServer.type === type && styles.typeButtonTextActive,
-                      ]}
-                    >
-                      {type.toUpperCase()}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                <TouchableOpacity
+                  style={[styles.typeButton, formType === 'v2ray' && styles.activeTypeButton]}
+                  onPress={() => setFormType('v2ray')}
+                >
+                  <Text style={[styles.typeButtonText, formType === 'v2ray' && styles.activeTypeButtonText]}>
+                    V2Ray
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.typeButton, formType === 'websocket' && styles.activeTypeButton]}
+                  onPress={() => setFormType('websocket')}
+                >
+                  <Text style={[styles.typeButtonText, formType === 'websocket' && styles.activeTypeButtonText]}>
+                    WebSocket
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.typeButton, formType === 'udp' && styles.activeTypeButton]}
+                  onPress={() => setFormType('udp')}
+                >
+                  <Text style={[styles.typeButtonText, formType === 'udp' && styles.activeTypeButtonText]}>
+                    UDP
+                  </Text>
+                </TouchableOpacity>
               </View>
 
               <Text style={styles.label}>Username *</Text>
@@ -348,8 +507,8 @@ export default function AdminScreen() {
                 style={styles.input}
                 placeholder="Enter username"
                 placeholderTextColor={colors.textSecondary}
-                value={newServer.username}
-                onChangeText={text => setNewServer({ ...newServer, username: text })}
+                value={formUsername}
+                onChangeText={setFormUsername}
               />
 
               <Text style={styles.label}>Host *</Text>
@@ -357,8 +516,8 @@ export default function AdminScreen() {
                 style={styles.input}
                 placeholder="Enter host"
                 placeholderTextColor={colors.textSecondary}
-                value={newServer.host}
-                onChangeText={text => setNewServer({ ...newServer, host: text })}
+                value={formHost}
+                onChangeText={setFormHost}
               />
 
               <Text style={styles.label}>Password *</Text>
@@ -366,9 +525,8 @@ export default function AdminScreen() {
                 style={styles.input}
                 placeholder="Enter password"
                 placeholderTextColor={colors.textSecondary}
-                value={newServer.password}
-                onChangeText={text => setNewServer({ ...newServer, password: text })}
-                secureTextEntry
+                value={formPassword}
+                onChangeText={setFormPassword}
               />
 
               <Text style={styles.label}>Port</Text>
@@ -376,49 +534,43 @@ export default function AdminScreen() {
                 style={styles.input}
                 placeholder="Enter port"
                 placeholderTextColor={colors.textSecondary}
-                value={newServer.port}
-                onChangeText={text => setNewServer({ ...newServer, port: text })}
+                value={formPort}
+                onChangeText={setFormPort}
                 keyboardType="numeric"
               />
 
-              <Text style={styles.label}>Custom Config (Ready-to-copy)</Text>
+              <Text style={styles.label}>Custom Config</Text>
               <TextInput
                 style={[styles.input, styles.textArea]}
-                placeholder="Enter custom configuration..."
+                placeholder="Enter custom config (optional)"
                 placeholderTextColor={colors.textSecondary}
-                value={newServer.customConfig}
-                onChangeText={text => setNewServer({ ...newServer, customConfig: text })}
+                value={formCustomConfig}
+                onChangeText={setFormCustomConfig}
                 multiline
-                numberOfLines={4}
+                numberOfLines={3}
               />
 
-              <View style={styles.switchContainer}>
-                <Text style={styles.label}>Server Online</Text>
+              <View style={styles.statusContainer}>
+                <Text style={styles.label}>Server Status</Text>
                 <TouchableOpacity
-                  style={[
-                    styles.switch,
-                    newServer.isOnline && styles.switchActive,
-                  ]}
-                  onPress={() =>
-                    setNewServer({ ...newServer, isOnline: !newServer.isOnline })
-                  }
+                  style={styles.statusToggle}
+                  onPress={() => setFormIsOnline(!formIsOnline)}
                 >
-                  <View
-                    style={[
-                      styles.switchThumb,
-                      newServer.isOnline && styles.switchThumbActive,
-                    ]}
-                  />
+                  <View style={[styles.statusIndicator, formIsOnline && styles.statusIndicatorOnline]} />
+                  <Text style={styles.statusText}>{formIsOnline ? 'Online' : 'Offline'}</Text>
                 </TouchableOpacity>
               </View>
 
-              <TouchableOpacity
-                style={styles.modalButton}
-                onPress={editingServer ? handleUpdateServer : handleAddServer}
+              <TouchableOpacity 
+                style={[styles.updateButton, saving && styles.disabledButton]} 
+                onPress={handleUpdateServer}
+                disabled={saving}
               >
-                <Text style={styles.modalButtonText}>
-                  {editingServer ? 'Update Server' : 'Add Server'}
-                </Text>
+                {saving ? (
+                  <ActivityIndicator size="small" color={colors.background} />
+                ) : (
+                  <Text style={styles.updateButtonText}>Update Server</Text>
+                )}
               </TouchableOpacity>
             </ScrollView>
           </View>
@@ -433,215 +585,249 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  backButton: {
-    marginLeft: 16,
-    padding: 4,
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: colors.text,
   },
   loginContainer: {
     flex: 1,
     justifyContent: 'center',
-    alignItems: 'center',
     padding: 24,
   },
-  loginTitle: {
-    fontSize: 28,
+  title: {
+    fontSize: 32,
     fontWeight: 'bold',
-    color: colors.text,
-    marginTop: 24,
-    marginBottom: 8,
-  },
-  loginSubtitle: {
-    fontSize: 16,
-    color: colors.textSecondary,
+    color: colors.primary,
     marginBottom: 32,
-  },
-  input: {
-    width: '100%',
-    backgroundColor: colors.highlight,
-    borderRadius: 8,
-    padding: 12,
-    color: colors.text,
-    fontSize: 16,
-    borderWidth: 1,
-    borderColor: colors.primary,
-    marginBottom: 16,
-  },
-  textArea: {
-    minHeight: 80,
-    textAlignVertical: 'top',
-  },
-  loginButton: {
-    width: '100%',
-    backgroundColor: colors.primary,
-    paddingVertical: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  loginButtonText: {
-    color: colors.text,
-    fontSize: 18,
-    fontWeight: 'bold',
+    textAlign: 'center',
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
     padding: 16,
-    paddingBottom: 32,
+    paddingBottom: 100,
   },
   section: {
-    marginBottom: 24,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    padding: 16,
     marginBottom: 16,
   },
   sectionTitle: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: 'bold',
-    color: colors.text,
+    color: colors.primary,
     marginBottom: 16,
   },
   label: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
     color: colors.text,
     marginBottom: 8,
+    marginTop: 12,
   },
-  saveButton: {
-    backgroundColor: colors.secondary,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
+  input: {
+    backgroundColor: colors.background,
     borderRadius: 8,
-    gap: 8,
-    marginTop: 8,
-  },
-  saveButtonText: {
-    color: colors.text,
+    padding: 12,
     fontSize: 16,
-    fontWeight: 'bold',
-  },
-  addButton: {
-    padding: 4,
-  },
-  serverCard: {
-    backgroundColor: colors.card,
-    borderRadius: 8,
-    padding: 16,
-    marginBottom: 12,
-  },
-  serverHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  serverType: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: colors.primary,
-  },
-  serverActions: {
-    flexDirection: 'row',
-    gap: 16,
-  },
-  serverInfo: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginBottom: 4,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContent: {
-    backgroundColor: colors.card,
-    borderRadius: 16,
-    width: '90%',
-    maxHeight: '80%',
-    padding: 20,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  modalTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
     color: colors.text,
+    borderWidth: 1,
+    borderColor: colors.primary + '30',
   },
-  modalScroll: {
-    maxHeight: 500,
+  textArea: {
+    minHeight: 80,
+    textAlignVertical: 'top',
   },
   typeSelector: {
     flexDirection: 'row',
     gap: 8,
-    marginBottom: 16,
+    marginBottom: 8,
   },
   typeButton: {
     flex: 1,
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: 8,
-    backgroundColor: colors.highlight,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.primary + '30',
     alignItems: 'center',
   },
-  typeButtonActive: {
+  activeTypeButton: {
     backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   typeButtonText: {
-    color: colors.textSecondary,
     fontSize: 14,
     fontWeight: '600',
+    color: colors.textSecondary,
   },
-  typeButtonTextActive: {
+  activeTypeButtonText: {
+    color: colors.background,
+  },
+  statusContainer: {
+    marginTop: 12,
+  },
+  statusToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 8,
+  },
+  statusIndicator: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: colors.textSecondary,
+  },
+  statusIndicatorOnline: {
+    backgroundColor: colors.secondary,
+  },
+  statusText: {
+    fontSize: 16,
     color: colors.text,
   },
-  switchContainer: {
+  loginButton: {
+    backgroundColor: colors.primary,
+    borderRadius: 8,
+    padding: 16,
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  loginButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.background,
+  },
+  saveButton: {
+    backgroundColor: colors.primary,
+    borderRadius: 8,
+    padding: 16,
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  saveButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.background,
+  },
+  addButton: {
+    flexDirection: 'row',
+    backgroundColor: colors.secondary,
+    borderRadius: 8,
+    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 16,
+    gap: 8,
+  },
+  addButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.background,
+  },
+  disabledButton: {
+    opacity: 0.6,
+  },
+  serverItem: {
+    flexDirection: 'row',
+    backgroundColor: colors.background,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: colors.primary + '20',
+  },
+  serverInfo: {
+    flex: 1,
+  },
+  serverHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 8,
+  },
+  serverType: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: colors.primary,
+  },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    backgroundColor: colors.textSecondary + '30',
+  },
+  statusBadgeOnline: {
+    backgroundColor: colors.secondary + '30',
+  },
+  statusBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  serverDetail: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginBottom: 4,
+  },
+  serverActions: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
+  editButton: {
+    padding: 8,
+  },
+  deleteButton: {
+    padding: 8,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    padding: 16,
+  },
+  modalContent: {
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    maxHeight: '90%',
+  },
+  modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.primary + '30',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: colors.primary,
+  },
+  modalScroll: {
+    padding: 16,
+  },
+  updateButton: {
+    backgroundColor: colors.primary,
+    borderRadius: 8,
+    padding: 16,
+    alignItems: 'center',
+    marginTop: 16,
     marginBottom: 16,
   },
-  switch: {
-    width: 50,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.highlight,
-    padding: 2,
-    justifyContent: 'center',
-  },
-  switchActive: {
-    backgroundColor: colors.success,
-  },
-  switchThumb: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: colors.text,
-  },
-  switchThumbActive: {
-    alignSelf: 'flex-end',
-  },
-  modalButton: {
-    backgroundColor: colors.primary,
-    paddingVertical: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  modalButtonText: {
-    color: colors.text,
+  updateButtonText: {
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '600',
+    color: colors.background,
   },
 });

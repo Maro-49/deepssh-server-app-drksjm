@@ -1,129 +1,153 @@
 
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Linking } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
-import { colors } from '@/styles/commonStyles';
-import { IconSymbol } from '@/components/IconSymbol';
-import ServerCard from '@/components/ServerCard';
 import { getServers, getAppSettings, subscribeToDataChanges } from '@/data/serversData';
+import React, { useState, useEffect } from 'react';
+import { colors } from '@/styles/commonStyles';
+import ServerCard from '@/components/ServerCard';
+import { Stack, useRouter } from 'expo-router';
+import { IconSymbol } from '@/components/IconSymbol';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Linking, ActivityIndicator } from 'react-native';
+import { Server, AppSettings } from '@/types/server';
 
 export default function HomeScreen() {
   const router = useRouter();
+  const [servers, setServers] = useState<Server[]>([]);
+  const [settings, setSettings] = useState<AppSettings>({ welcomeMessage: '', updateNumber: '' });
   const [selectedTab, setSelectedTab] = useState<'v2ray' | 'websocket' | 'udp'>('v2ray');
-  const [servers, setServers] = useState(getServers());
-  const [appSettings, setAppSettings] = useState(getAppSettings());
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    loadData();
+
     // Subscribe to data changes
     const unsubscribe = subscribeToDataChanges(() => {
-      console.log('Data changed, updating home screen');
-      setServers(getServers());
-      setAppSettings(getAppSettings());
+      console.log('Data changed, reloading...');
+      loadData();
     });
 
-    return () => {
-      unsubscribe();
-    };
+    return unsubscribe;
   }, []);
 
-  const filteredServers = servers.filter(server => server.type === selectedTab);
-
-  const openTelegram = async () => {
-    const telegramUrl = 'https://t.me/Deepsshnet';
+  const loadData = async () => {
     try {
-      const supported = await Linking.canOpenURL(telegramUrl);
-      if (supported) {
-        await Linking.openURL(telegramUrl);
-      } else {
-        Alert.alert('Error', 'Cannot open Telegram link');
-      }
+      setLoading(true);
+      const loadedServers = await getServers();
+      const loadedSettings = await getAppSettings();
+      setServers(loadedServers);
+      setSettings(loadedSettings);
+      console.log('Data loaded successfully');
     } catch (error) {
-      console.log('Error opening Telegram:', error);
-      Alert.alert('Error', 'Failed to open Telegram link');
+      console.error('Error loading data:', error);
+    } finally {
+      setLoading(false);
     }
+  };
+
+  const openTelegram = () => {
+    Linking.openURL('https://t.me/Deepsshnet').catch(err => {
+      console.error('Failed to open Telegram link:', err);
+      Alert.alert('Error', 'Could not open Telegram link');
+    });
   };
 
   const goToAdmin = () => {
     router.push('/admin');
   };
 
+  const filteredServers = servers.filter(server => server.type === selectedTab);
+
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <Stack.Screen
+          options={{
+            title: 'DeepSSH',
+            headerStyle: { backgroundColor: colors.background },
+            headerTintColor: colors.text,
+            headerRight: () => (
+              <TouchableOpacity onPress={goToAdmin} style={styles.adminButton}>
+                <IconSymbol name="settings" size={24} color={colors.primary} />
+              </TouchableOpacity>
+            ),
+          }}
+        />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>Loading servers...</Text>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <Stack.Screen
         options={{
-          headerShown: true,
           title: 'DeepSSH',
-          headerStyle: {
-            backgroundColor: colors.card,
-          },
+          headerStyle: { backgroundColor: colors.background },
           headerTintColor: colors.text,
-          headerTitleStyle: {
-            fontWeight: 'bold',
-            fontSize: 20,
-          },
           headerRight: () => (
             <TouchableOpacity onPress={goToAdmin} style={styles.adminButton}>
-              <IconSymbol name="gear" size={24} color={colors.primary} />
+              <IconSymbol name="settings" size={24} color={colors.primary} />
             </TouchableOpacity>
           ),
         }}
       />
 
-      <View style={styles.welcomeContainer}>
-        <Text style={styles.welcomeText}>{appSettings.welcomeMessage}</Text>
-        <Text style={styles.updateText}>Update: {appSettings.updateNumber}</Text>
-      </View>
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        {/* Welcome Message */}
+        <View style={styles.welcomeCard}>
+          <Text style={styles.welcomeMessage}>{settings.welcomeMessage}</Text>
+          <Text style={styles.updateNumber}>Update: {settings.updateNumber}</Text>
+        </View>
 
-      <View style={styles.tabContainer}>
-        <TouchableOpacity
-          style={[styles.tab, selectedTab === 'v2ray' && styles.activeTab]}
-          onPress={() => setSelectedTab('v2ray')}
-        >
-          <Text style={[styles.tabText, selectedTab === 'v2ray' && styles.activeTabText]}>
-            V2Ray
-          </Text>
+        {/* Tab Navigation */}
+        <View style={styles.tabContainer}>
+          <TouchableOpacity
+            style={[styles.tab, selectedTab === 'v2ray' && styles.activeTab]}
+            onPress={() => setSelectedTab('v2ray')}
+          >
+            <Text style={[styles.tabText, selectedTab === 'v2ray' && styles.activeTabText]}>
+              V2Ray
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tab, selectedTab === 'websocket' && styles.activeTab]}
+            onPress={() => setSelectedTab('websocket')}
+          >
+            <Text style={[styles.tabText, selectedTab === 'websocket' && styles.activeTabText]}>
+              WebSocket
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tab, selectedTab === 'udp' && styles.activeTab]}
+            onPress={() => setSelectedTab('udp')}
+          >
+            <Text style={[styles.tabText, selectedTab === 'udp' && styles.activeTabText]}>
+              UDP Custom
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Server List */}
+        <View style={styles.serverList}>
+          {filteredServers.length > 0 ? (
+            filteredServers.map(server => (
+              <ServerCard key={server.id} server={server} />
+            ))
+          ) : (
+            <View style={styles.emptyState}>
+              <IconSymbol name="cloud-off" size={48} color={colors.textSecondary} />
+              <Text style={styles.emptyText}>No {selectedTab} servers available</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Telegram Button */}
+        <TouchableOpacity style={styles.telegramButton} onPress={openTelegram}>
+          <IconSymbol name="send" size={20} color={colors.background} />
+          <Text style={styles.telegramButtonText}>Join our Telegram Channel</Text>
         </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.tab, selectedTab === 'websocket' && styles.activeTab]}
-          onPress={() => setSelectedTab('websocket')}
-        >
-          <Text style={[styles.tabText, selectedTab === 'websocket' && styles.activeTabText]}>
-            WebSocket
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.tab, selectedTab === 'udp' && styles.activeTab]}
-          onPress={() => setSelectedTab('udp')}
-        >
-          <Text style={[styles.tabText, selectedTab === 'udp' && styles.activeTabText]}>
-            UDP Custom
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView 
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {filteredServers.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <IconSymbol name="exclamationmark.triangle" size={48} color={colors.textSecondary} />
-            <Text style={styles.emptyText}>No servers available</Text>
-          </View>
-        ) : (
-          filteredServers.map(server => (
-            <ServerCard key={server.id} server={server} />
-          ))
-        )}
       </ScrollView>
-
-      <TouchableOpacity style={styles.telegramButton} onPress={openTelegram}>
-        <IconSymbol name="paperplane.fill" size={20} color={colors.text} />
-        <Text style={styles.telegramButtonText}>Join our Telegram Channel</Text>
-      </TouchableOpacity>
     </View>
   );
 }
@@ -133,38 +157,52 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: colors.text,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 16,
+    paddingBottom: 100,
+  },
   adminButton: {
     marginRight: 16,
-    padding: 4,
+    padding: 8,
   },
-  welcomeContainer: {
+  welcomeCard: {
     backgroundColor: colors.card,
-    padding: 16,
-    marginHorizontal: 16,
-    marginTop: 16,
     borderRadius: 12,
-    boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.2)',
-    elevation: 2,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: colors.primary + '30',
   },
-  welcomeText: {
-    color: colors.text,
+  welcomeMessage: {
     fontSize: 16,
-    lineHeight: 24,
+    color: colors.text,
     marginBottom: 8,
+    lineHeight: 24,
   },
-  updateText: {
-    color: colors.secondary,
+  updateNumber: {
     fontSize: 14,
+    color: colors.primary,
     fontWeight: '600',
   },
   tabContainer: {
     flexDirection: 'row',
-    marginHorizontal: 16,
-    marginTop: 16,
-    marginBottom: 8,
     backgroundColor: colors.card,
     borderRadius: 12,
     padding: 4,
+    marginBottom: 20,
   },
   tab: {
     flex: 1,
@@ -176,49 +214,39 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
   },
   tabText: {
-    color: colors.textSecondary,
     fontSize: 14,
     fontWeight: '600',
+    color: colors.textSecondary,
   },
   activeTabText: {
-    color: colors.text,
+    color: colors.background,
   },
-  scrollView: {
-    flex: 1,
+  serverList: {
+    gap: 16,
   },
-  scrollContent: {
-    paddingTop: 8,
-    paddingBottom: 100,
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
+  emptyState: {
     alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: 60,
   },
   emptyText: {
-    color: colors.textSecondary,
-    fontSize: 16,
     marginTop: 16,
+    fontSize: 16,
+    color: colors.textSecondary,
   },
   telegramButton: {
-    position: 'absolute',
-    bottom: 16,
-    left: 16,
-    right: 16,
-    backgroundColor: colors.accent,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 16,
+    backgroundColor: colors.accent,
     borderRadius: 12,
+    padding: 16,
+    marginTop: 24,
     gap: 8,
-    boxShadow: '0px 4px 12px rgba(255, 64, 129, 0.4)',
-    elevation: 6,
   },
   telegramButtonText: {
-    color: colors.text,
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '600',
+    color: colors.background,
   },
 });

@@ -1,7 +1,12 @@
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Server, AppSettings } from '@/types/server';
 
-let servers: Server[] = [
+const SERVERS_STORAGE_KEY = '@deepssh_servers';
+const SETTINGS_STORAGE_KEY = '@deepssh_settings';
+
+// Default data
+const defaultServers: Server[] = [
   {
     id: '1',
     type: 'v2ray',
@@ -70,10 +75,15 @@ let servers: Server[] = [
   },
 ];
 
-let appSettings: AppSettings = {
+const defaultSettings: AppSettings = {
   welcomeMessage: '🎉 Welcome to DeepSSH! New servers added. Check them out! 🚀',
   updateNumber: 'v1.0.0',
 };
+
+// In-memory cache
+let servers: Server[] = [...defaultServers];
+let appSettings: AppSettings = { ...defaultSettings };
+let isInitialized = false;
 
 // Event listeners for data changes
 type DataChangeListener = () => void;
@@ -93,34 +103,130 @@ export const subscribeToDataChanges = (listener: DataChangeListener) => {
   };
 };
 
-export const getServers = () => servers;
-export const getAppSettings = () => appSettings;
+// Load data from AsyncStorage
+export const loadData = async () => {
+  try {
+    console.log('Loading data from AsyncStorage...');
+    
+    // Load servers
+    const serversJson = await AsyncStorage.getItem(SERVERS_STORAGE_KEY);
+    if (serversJson) {
+      servers = JSON.parse(serversJson);
+      console.log('Servers loaded from storage:', servers.length, 'servers');
+    } else {
+      console.log('No stored servers found, using defaults');
+      servers = [...defaultServers];
+      // Save defaults to storage
+      await saveServers();
+    }
 
-export const updateServers = (newServers: Server[]) => {
+    // Load settings
+    const settingsJson = await AsyncStorage.getItem(SETTINGS_STORAGE_KEY);
+    if (settingsJson) {
+      appSettings = JSON.parse(settingsJson);
+      console.log('Settings loaded from storage:', appSettings);
+    } else {
+      console.log('No stored settings found, using defaults');
+      appSettings = { ...defaultSettings };
+      // Save defaults to storage
+      await saveSettings();
+    }
+
+    isInitialized = true;
+    notifyListeners();
+  } catch (error) {
+    console.error('Error loading data from AsyncStorage:', error);
+    // Fallback to defaults on error
+    servers = [...defaultServers];
+    appSettings = { ...defaultSettings };
+    isInitialized = true;
+  }
+};
+
+// Save servers to AsyncStorage
+const saveServers = async () => {
+  try {
+    const serversJson = JSON.stringify(servers);
+    await AsyncStorage.setItem(SERVERS_STORAGE_KEY, serversJson);
+    console.log('Servers saved to storage');
+  } catch (error) {
+    console.error('Error saving servers to AsyncStorage:', error);
+  }
+};
+
+// Save settings to AsyncStorage
+const saveSettings = async () => {
+  try {
+    const settingsJson = JSON.stringify(appSettings);
+    await AsyncStorage.setItem(SETTINGS_STORAGE_KEY, settingsJson);
+    console.log('Settings saved to storage');
+  } catch (error) {
+    console.error('Error saving settings to AsyncStorage:', error);
+  }
+};
+
+// Initialize data on first access
+const ensureInitialized = async () => {
+  if (!isInitialized) {
+    await loadData();
+  }
+};
+
+// Public API
+export const getServers = async (): Promise<Server[]> => {
+  await ensureInitialized();
+  return servers;
+};
+
+export const getAppSettings = async (): Promise<AppSettings> => {
+  await ensureInitialized();
+  return appSettings;
+};
+
+export const updateServers = async (newServers: Server[]) => {
   servers = newServers;
+  await saveServers();
   notifyListeners();
 };
 
-export const updateAppSettings = (newSettings: Partial<AppSettings>) => {
+export const updateAppSettings = async (newSettings: Partial<AppSettings>) => {
   appSettings = { ...appSettings, ...newSettings };
   console.log('App settings updated:', appSettings);
+  await saveSettings();
   notifyListeners();
 };
 
-export const addServer = (server: Server) => {
+export const addServer = async (server: Server) => {
   servers = [...servers, server];
   console.log('Server added:', server);
+  await saveServers();
   notifyListeners();
 };
 
-export const deleteServer = (id: string) => {
+export const deleteServer = async (id: string) => {
   servers = servers.filter(s => s.id !== id);
   console.log('Server deleted:', id);
+  await saveServers();
   notifyListeners();
 };
 
-export const updateServer = (id: string, updatedServer: Partial<Server>) => {
+export const updateServer = async (id: string, updatedServer: Partial<Server>) => {
   servers = servers.map(s => s.id === id ? { ...s, ...updatedServer } : s);
   console.log('Server updated:', id, updatedServer);
+  await saveServers();
   notifyListeners();
+};
+
+// Clear all data (useful for debugging)
+export const clearAllData = async () => {
+  try {
+    await AsyncStorage.removeItem(SERVERS_STORAGE_KEY);
+    await AsyncStorage.removeItem(SETTINGS_STORAGE_KEY);
+    servers = [...defaultServers];
+    appSettings = { ...defaultSettings };
+    console.log('All data cleared, reset to defaults');
+    notifyListeners();
+  } catch (error) {
+    console.error('Error clearing data:', error);
+  }
 };

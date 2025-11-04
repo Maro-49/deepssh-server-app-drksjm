@@ -1,161 +1,209 @@
-import React from "react";
-import { Stack, Link } from "expo-router";
-import { FlatList, Pressable, StyleSheet, View, Text, Alert, Platform } from "react-native";
-import { IconSymbol } from "@/components/IconSymbol";
-import { GlassView } from "expo-glass-effect";
-import { useTheme } from "@react-navigation/native";
 
-const ICON_COLOR = "#007AFF";
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Linking } from 'react-native';
+import { Stack, useRouter } from 'expo-router';
+import { colors } from '@/styles/commonStyles';
+import { IconSymbol } from '@/components/IconSymbol';
+import ServerCard from '@/components/ServerCard';
+import { servers, appSettings } from '@/data/serversData';
 
 export default function HomeScreen() {
-  const theme = useTheme();
-  const modalDemos = [
-    {
-      title: "Standard Modal",
-      description: "Full screen modal presentation",
-      route: "/modal",
-      color: "#007AFF",
-    },
-    {
-      title: "Form Sheet",
-      description: "Bottom sheet with detents and grabber",
-      route: "/formsheet",
-      color: "#34C759",
-    },
-    {
-      title: "Transparent Modal",
-      description: "Overlay without obscuring background",
-      route: "/transparent-modal",
-      color: "#FF9500",
+  const router = useRouter();
+  const [selectedTab, setSelectedTab] = useState<'v2ray' | 'websocket' | 'udp'>('v2ray');
+
+  const filteredServers = servers.filter(server => server.type === selectedTab);
+
+  const openTelegram = async () => {
+    const telegramUrl = 'https://t.me/Deepsshnet';
+    try {
+      const supported = await Linking.canOpenURL(telegramUrl);
+      if (supported) {
+        await Linking.openURL(telegramUrl);
+      } else {
+        Alert.alert('Error', 'Cannot open Telegram link');
+      }
+    } catch (error) {
+      console.log('Error opening Telegram:', error);
+      Alert.alert('Error', 'Failed to open Telegram link');
     }
-  ];
+  };
 
-  const renderModalDemo = ({ item }: { item: (typeof modalDemos)[0] }) => (
-    <GlassView style={[
-      styles.demoCard,
-      Platform.OS !== 'ios' && { backgroundColor: theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }
-    ]} glassEffectStyle="regular">
-      <View style={[styles.demoIcon, { backgroundColor: item.color }]}>
-        <IconSymbol name="square.grid.3x3" color="white" size={24} />
-      </View>
-      <View style={styles.demoContent}>
-        <Text style={[styles.demoTitle, { color: theme.colors.text }]}>{item.title}</Text>
-        <Text style={[styles.demoDescription, { color: theme.dark ? '#98989D' : '#666' }]}>{item.description}</Text>
-      </View>
-      <Link href={item.route as any} asChild>
-        <Pressable>
-          <GlassView style={[
-            styles.tryButton,
-            Platform.OS !== 'ios' && { backgroundColor: theme.dark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.08)' }
-          ]} glassEffectStyle="clear">
-            <Text style={[styles.tryButtonText, { color: theme.colors.primary }]}>Try It</Text>
-          </GlassView>
-        </Pressable>
-      </Link>
-    </GlassView>
-  );
-
-  const renderHeaderRight = () => (
-    <Pressable
-      onPress={() => Alert.alert("Not Implemented", "This feature is not implemented yet")}
-      style={styles.headerButtonContainer}
-    >
-      <IconSymbol name="plus" color={theme.colors.primary} />
-    </Pressable>
-  );
-
-  const renderHeaderLeft = () => (
-    <Pressable
-      onPress={() => Alert.alert("Not Implemented", "This feature is not implemented yet")}
-      style={styles.headerButtonContainer}
-    >
-      <IconSymbol
-        name="gear"
-        color={theme.colors.primary}
-      />
-    </Pressable>
-  );
+  const goToAdmin = () => {
+    router.push('/admin');
+  };
 
   return (
-    <>
-      {Platform.OS === 'ios' && (
-        <Stack.Screen
-          options={{
-            title: "Building the app...",
-            headerRight: renderHeaderRight,
-            headerLeft: renderHeaderLeft,
-          }}
-        />
-      )}
-      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-        <FlatList
-          data={modalDemos}
-          renderItem={renderModalDemo}
-          keyExtractor={(item) => item.route}
-          contentContainerStyle={[
-            styles.listContainer,
-            Platform.OS !== 'ios' && styles.listContainerWithTabBar
-          ]}
-          contentInsetAdjustmentBehavior="automatic"
-          showsVerticalScrollIndicator={false}
-        />
+    <View style={styles.container}>
+      <Stack.Screen
+        options={{
+          headerShown: true,
+          title: 'DeepSSH',
+          headerStyle: {
+            backgroundColor: colors.card,
+          },
+          headerTintColor: colors.text,
+          headerTitleStyle: {
+            fontWeight: 'bold',
+            fontSize: 20,
+          },
+          headerRight: () => (
+            <TouchableOpacity onPress={goToAdmin} style={styles.adminButton}>
+              <IconSymbol name="gear" size={24} color={colors.primary} />
+            </TouchableOpacity>
+          ),
+        }}
+      />
+
+      <View style={styles.welcomeContainer}>
+        <Text style={styles.welcomeText}>{appSettings.welcomeMessage}</Text>
+        <Text style={styles.updateText}>Update: {appSettings.updateNumber}</Text>
       </View>
-    </>
+
+      <View style={styles.tabContainer}>
+        <TouchableOpacity
+          style={[styles.tab, selectedTab === 'v2ray' && styles.activeTab]}
+          onPress={() => setSelectedTab('v2ray')}
+        >
+          <Text style={[styles.tabText, selectedTab === 'v2ray' && styles.activeTabText]}>
+            V2Ray
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.tab, selectedTab === 'websocket' && styles.activeTab]}
+          onPress={() => setSelectedTab('websocket')}
+        >
+          <Text style={[styles.tabText, selectedTab === 'websocket' && styles.activeTabText]}>
+            WebSocket
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.tab, selectedTab === 'udp' && styles.activeTab]}
+          onPress={() => setSelectedTab('udp')}
+        >
+          <Text style={[styles.tabText, selectedTab === 'udp' && styles.activeTabText]}>
+            UDP Custom
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView 
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {filteredServers.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <IconSymbol name="exclamationmark.triangle" size={48} color={colors.textSecondary} />
+            <Text style={styles.emptyText}>No servers available</Text>
+          </View>
+        ) : (
+          filteredServers.map(server => (
+            <ServerCard key={server.id} server={server} />
+          ))
+        )}
+      </ScrollView>
+
+      <TouchableOpacity style={styles.telegramButton} onPress={openTelegram}>
+        <IconSymbol name="paperplane.fill" size={20} color={colors.text} />
+        <Text style={styles.telegramButtonText}>Join our Telegram Channel</Text>
+      </TouchableOpacity>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    // backgroundColor handled dynamically
+    backgroundColor: colors.background,
   },
-  listContainer: {
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-  },
-  listContainerWithTabBar: {
-    paddingBottom: 100, // Extra padding for floating tab bar
-  },
-  demoCard: {
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  demoIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
+  adminButton: {
     marginRight: 16,
+    padding: 4,
   },
-  demoContent: {
+  welcomeContainer: {
+    backgroundColor: colors.card,
+    padding: 16,
+    marginHorizontal: 16,
+    marginTop: 16,
+    borderRadius: 12,
+    boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.2)',
+    elevation: 2,
+  },
+  welcomeText: {
+    color: colors.text,
+    fontSize: 16,
+    lineHeight: 24,
+    marginBottom: 8,
+  },
+  updateText: {
+    color: colors.secondary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    marginHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 8,
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    padding: 4,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderRadius: 8,
+  },
+  activeTab: {
+    backgroundColor: colors.primary,
+  },
+  tabText: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  activeTabText: {
+    color: colors.text,
+  },
+  scrollView: {
     flex: 1,
   },
-  demoTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 4,
-    // color handled dynamically
+  scrollContent: {
+    paddingTop: 8,
+    paddingBottom: 100,
   },
-  demoDescription: {
-    fontSize: 14,
-    lineHeight: 18,
-    // color handled dynamically
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
   },
-  headerButtonContainer: {
-    padding: 6,
+  emptyText: {
+    color: colors.textSecondary,
+    fontSize: 16,
+    marginTop: 16,
   },
-  tryButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 6,
+  telegramButton: {
+    position: 'absolute',
+    bottom: 16,
+    left: 16,
+    right: 16,
+    backgroundColor: colors.accent,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    borderRadius: 12,
+    gap: 8,
+    boxShadow: '0px 4px 12px rgba(255, 64, 129, 0.4)',
+    elevation: 6,
   },
-  tryButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    // color handled dynamically
+  telegramButtonText: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });

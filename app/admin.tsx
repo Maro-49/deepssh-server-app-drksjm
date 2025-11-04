@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -14,12 +14,13 @@ import { useRouter, Stack } from 'expo-router';
 import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
 import {
-  servers,
-  appSettings,
+  getServers,
+  getAppSettings,
   updateAppSettings,
   addServer,
   deleteServer,
   updateServer,
+  subscribeToDataChanges,
 } from '@/data/serversData';
 import { Server } from '@/types/server';
 
@@ -31,8 +32,9 @@ export default function AdminScreen() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [welcomeMessage, setWelcomeMessage] = useState(appSettings.welcomeMessage);
-  const [updateNumber, setUpdateNumber] = useState(appSettings.updateNumber);
+  const [servers, setServers] = useState(getServers());
+  const [welcomeMessage, setWelcomeMessage] = useState(getAppSettings().welcomeMessage);
+  const [updateNumber, setUpdateNumber] = useState(getAppSettings().updateNumber);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingServer, setEditingServer] = useState<Server | null>(null);
 
@@ -46,6 +48,21 @@ export default function AdminScreen() {
     customConfig: '',
   });
 
+  useEffect(() => {
+    // Subscribe to data changes
+    const unsubscribe = subscribeToDataChanges(() => {
+      console.log('Data changed, updating admin screen');
+      setServers(getServers());
+      const settings = getAppSettings();
+      setWelcomeMessage(settings.welcomeMessage);
+      setUpdateNumber(settings.updateNumber);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
   const handleLogin = () => {
     if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
       setIsAuthenticated(true);
@@ -56,6 +73,7 @@ export default function AdminScreen() {
   };
 
   const handleSaveSettings = () => {
+    console.log('Saving settings:', { welcomeMessage, updateNumber });
     updateAppSettings({
       welcomeMessage,
       updateNumber,
@@ -75,9 +93,9 @@ export default function AdminScreen() {
       username: newServer.username,
       host: newServer.host,
       password: newServer.password,
-      port: newServer.port,
+      port: newServer.port || '',
       isOnline: newServer.isOnline ?? true,
-      customConfig: newServer.customConfig,
+      customConfig: newServer.customConfig || '',
       createdAt: new Date().toISOString(),
     };
 
@@ -234,7 +252,7 @@ export default function AdminScreen() {
 
           <TouchableOpacity style={styles.saveButton} onPress={handleSaveSettings}>
             <IconSymbol name="checkmark.circle" size={20} color={colors.text} />
-            <Text style={styles.saveButtonText}>Save Settings</Text>
+            <Text style={styles.saveButtonText}>Update Settings and Servers</Text>
           </TouchableOpacity>
         </View>
 

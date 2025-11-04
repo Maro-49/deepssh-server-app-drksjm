@@ -1,7 +1,7 @@
 
 import { Server, AppSettings } from '@/types/server';
 
-export let servers: Server[] = [
+let servers: Server[] = [
   {
     id: '1',
     type: 'v2ray',
@@ -70,27 +70,57 @@ export let servers: Server[] = [
   },
 ];
 
-export let appSettings: AppSettings = {
+let appSettings: AppSettings = {
   welcomeMessage: '🎉 Welcome to DeepSSH! New servers added. Check them out! 🚀',
   updateNumber: 'v1.0.0',
 };
 
-export const updateServers = (newServers: Server[]) => {
-  servers = newServers;
+// Event listeners for data changes
+type DataChangeListener = () => void;
+const listeners: DataChangeListener[] = [];
+
+const notifyListeners = () => {
+  listeners.forEach(listener => listener());
 };
 
-export const updateAppSettings = (newSettings: AppSettings) => {
-  appSettings = newSettings;
+export const subscribeToDataChanges = (listener: DataChangeListener) => {
+  listeners.push(listener);
+  return () => {
+    const index = listeners.indexOf(listener);
+    if (index > -1) {
+      listeners.splice(index, 1);
+    }
+  };
+};
+
+export const getServers = () => servers;
+export const getAppSettings = () => appSettings;
+
+export const updateServers = (newServers: Server[]) => {
+  servers = newServers;
+  notifyListeners();
+};
+
+export const updateAppSettings = (newSettings: Partial<AppSettings>) => {
+  appSettings = { ...appSettings, ...newSettings };
+  console.log('App settings updated:', appSettings);
+  notifyListeners();
 };
 
 export const addServer = (server: Server) => {
   servers = [...servers, server];
+  console.log('Server added:', server);
+  notifyListeners();
 };
 
 export const deleteServer = (id: string) => {
   servers = servers.filter(s => s.id !== id);
+  console.log('Server deleted:', id);
+  notifyListeners();
 };
 
 export const updateServer = (id: string, updatedServer: Partial<Server>) => {
   servers = servers.map(s => s.id === id ? { ...s, ...updatedServer } : s);
+  console.log('Server updated:', id, updatedServer);
+  notifyListeners();
 };

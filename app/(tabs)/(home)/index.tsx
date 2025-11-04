@@ -1,15 +1,30 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Linking } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
 import ServerCard from '@/components/ServerCard';
-import { servers, appSettings } from '@/data/serversData';
+import { getServers, getAppSettings, subscribeToDataChanges } from '@/data/serversData';
 
 export default function HomeScreen() {
   const router = useRouter();
   const [selectedTab, setSelectedTab] = useState<'v2ray' | 'websocket' | 'udp'>('v2ray');
+  const [servers, setServers] = useState(getServers());
+  const [appSettings, setAppSettings] = useState(getAppSettings());
+
+  useEffect(() => {
+    // Subscribe to data changes
+    const unsubscribe = subscribeToDataChanges(() => {
+      console.log('Data changed, updating home screen');
+      setServers(getServers());
+      setAppSettings(getAppSettings());
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   const filteredServers = servers.filter(server => server.type === selectedTab);
 
